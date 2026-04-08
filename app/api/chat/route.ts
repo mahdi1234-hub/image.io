@@ -2,9 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 
 const CEREBRAS_API_KEY = process.env.CEREBRAS_API_KEY || "";
 const CEREBRAS_BASE_URL = "https://api.cerebras.ai/v1";
-const PINECONE_API_KEY = process.env.PINECONE_API_KEY || "";
-const PINECONE_INDEX = process.env.PINECONE_INDEX || "rag-knowledge-base";
-const PINECONE_HOST = process.env.PINECONE_HOST || "";
 
 const SYSTEM_PROMPT = `You are Image.io Vision Agent, an intelligent AI assistant specializing in computer vision and image analysis. You can:
 
@@ -18,60 +15,6 @@ When image analysis data is provided, describe what you see in a natural, inform
 For general questions, provide helpful, well-structured responses. You are knowledgeable across many domains.
 
 Keep responses clear and well-formatted. Use markdown when helpful.`;
-
-// Simple embedding using a hash-based approach for RAG queries (384 dims to match Pinecone index)
-async function getSimpleEmbedding(text: string): Promise<number[]> {
-  const dim = 384;
-  const embedding = new Array(dim).fill(0);
-  const words = text.toLowerCase().split(/\s+/);
-  for (let i = 0; i < words.length; i++) {
-    const word = words[i];
-    for (let j = 0; j < word.length; j++) {
-      const idx = (word.charCodeAt(j) * (i + 1) * (j + 1)) % dim;
-      embedding[idx] += 1 / words.length;
-    }
-  }
-  // Normalize
-  const mag = Math.sqrt(embedding.reduce((s, v) => s + v * v, 0)) || 1;
-  return embedding.map((v) => v / mag);
-}
-
-async function queryPinecone(query: string): Promise<string> {
-  if (!PINECONE_API_KEY || !PINECONE_HOST) return "";
-
-  try {
-    const embedding = await getSimpleEmbedding(query);
-    const res = await fetch(`${PINECONE_HOST}/query`, {
-      method: "POST",
-      headers: {
-        "Api-Key": PINECONE_API_KEY,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        vector: embedding,
-        topK: 3,
-        includeMetadata: true,
-        namespace: "",
-      }),
-    });
-
-    if (!res.ok) return "";
-
-    const data = await res.json();
-    const matches = data.matches || [];
-    if (matches.length === 0) return "";
-
-    const context = matches
-      .filter((m: any) => m.score > 0.5)
-      .map((m: any) => m.metadata?.text || m.metadata?.content || "")
-      .filter(Boolean)
-      .join("\n\n");
-
-    return context ? `\n\nRelevant knowledge base context:\n${context}` : "";
-  } catch {
-    return "";
-  }
-}
 
 export async function GET() {
   return NextResponse.json({
@@ -98,18 +41,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Get the last user message for RAG query
-    const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
-    const ragContext = lastUserMsg
-      ? await queryPinecone(lastUserMsg.content)
-      : "";
-
-    // Build system message with optional RAG context
-    let systemContent = SYSTEM_PROMPT;
-    if (ragContext) {
-      systemContent += ragContext;
-    }
-
     // Build messages array, injecting image analysis as context
     const formattedMessages = messages.map((m: { role: string; content: string }) => ({
       role: m.role,
@@ -117,7 +48,6 @@ export async function POST(req: NextRequest) {
     }));
 
     // If image analysis is provided, inject it right before the last user message
-    // so the LLM has the detection results as context
     if (imageAnalysis) {
       const lastIdx = formattedMessages.length - 1;
       const lastMsg = formattedMessages[lastIdx];
@@ -130,7 +60,7 @@ export async function POST(req: NextRequest) {
     }
 
     const apiMessages = [
-      { role: "system", content: systemContent },
+      { role: "system", content: SYSTEM_PROMPT },
       ...formattedMessages,
     ];
 
