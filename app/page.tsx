@@ -333,12 +333,14 @@ export default function Home() {
         .map((c) => `${c.className} (${(c.probability * 100).toFixed(1)}%)`)
         .join(", ");
 
-      const imageDescription = [
+      const parts = [
         detLabels ? `Objects detected: ${detLabels}.` : "",
         classLabels ? `Scene classification: ${classLabels}.` : "",
-      ]
-        .filter(Boolean)
-        .join(" ");
+      ].filter(Boolean);
+
+      const imageDescription = parts.length > 0
+        ? parts.join(" ")
+        : "The image was uploaded and processed. The computer vision models were unable to identify specific objects or classify the scene with high confidence, but an image has been provided by the user. Please acknowledge the image was received and describe what a typical analysis might find, or ask the user to describe what is in the image.";
 
       // Add user message with image
       const userMsg: Message = {
