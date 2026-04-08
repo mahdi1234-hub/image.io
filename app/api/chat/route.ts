@@ -19,9 +19,9 @@ For general questions, provide helpful, well-structured responses. You are knowl
 
 Keep responses clear and well-formatted. Use markdown when helpful.`;
 
-// Simple embedding using a hash-based approach for RAG queries
+// Simple embedding using a hash-based approach for RAG queries (384 dims to match Pinecone index)
 async function getSimpleEmbedding(text: string): Promise<number[]> {
-  const dim = 1536;
+  const dim = 384;
   const embedding = new Array(dim).fill(0);
   const words = text.toLowerCase().split(/\s+/);
   for (let i = 0; i < words.length; i++) {
