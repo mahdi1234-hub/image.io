@@ -104,21 +104,34 @@ export async function POST(req: NextRequest) {
       ? await queryPinecone(lastUserMsg.content)
       : "";
 
-    // Build system message with optional image analysis and RAG context
+    // Build system message with optional RAG context
     let systemContent = SYSTEM_PROMPT;
-    if (imageAnalysis) {
-      systemContent += `\n\nThe user has uploaded an image. Here are the computer vision analysis results:\n${imageAnalysis}\n\nDescribe what you see based on these results in a natural, informative way.`;
-    }
     if (ragContext) {
       systemContent += ragContext;
     }
 
+    // Build messages array, injecting image analysis as context
+    const formattedMessages = messages.map((m: { role: string; content: string }) => ({
+      role: m.role,
+      content: m.content,
+    }));
+
+    // If image analysis is provided, inject it right before the last user message
+    // so the LLM has the detection results as context
+    if (imageAnalysis) {
+      const lastIdx = formattedMessages.length - 1;
+      const lastMsg = formattedMessages[lastIdx];
+      if (lastMsg && lastMsg.role === "user") {
+        formattedMessages[lastIdx] = {
+          role: "user",
+          content: `[I uploaded an image. The computer vision system has already analyzed it and found the following results:\n${imageAnalysis}]\n\nMy question: ${lastMsg.content}\n\nPlease describe what was detected in the image based on the analysis results above. The bounding boxes and labels are already drawn on my screen, so focus on providing a natural description of the scene.`,
+        };
+      }
+    }
+
     const apiMessages = [
       { role: "system", content: systemContent },
-      ...messages.map((m: { role: string; content: string }) => ({
-        role: m.role,
-        content: m.content,
-      })),
+      ...formattedMessages,
     ];
 
     const response = await fetch(`${CEREBRAS_BASE_URL}/chat/completions`, {
